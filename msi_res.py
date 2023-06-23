@@ -273,12 +273,12 @@ def calculate_esf(data, pixel_size, disp=0, simplified=False):
     if xc > p[1]: # p[1] is the 50% x value from gaussian cdf fit ; xc is the x value of lsf maximum. theoretically they should match 
         xc = int(p[1] + 3) 
     else:
-        xc = xc+3  # assume that surface starts  3 pixels away from x point corresponding to 50% of edge transition
+        xc = xc+1  # assume that surface starts  3 pixels away from x point corresponding to 50% of edge transition
 
     #print(xc) #use this to print x value of surface
     
 
-    xc= xc+1
+    xc= xc+1 #1 8-for strong blur in thesis simulation!
     
     #print(xc)
     #x_I1 = round(p[1] + 3*p[0]) + 3
@@ -358,9 +358,10 @@ def calculate_mtf(data, pixel_size, disp=0, med_filt=False, fit_to_fourier=False
     
 
 
-    p_sigma, p_mu, x_I1, x_I0, red_chi = esf_fit_simplified(data_avg)  #fit gaussian cdf to data
-    p = np.array([p_sigma, p_mu, x_I1, x_I0])
+    #p_sigma, p_mu, x_I1, x_I0, red_chi = esf_fit_simplified(data_avg)  #fit gaussian cdf to data
+    #p = np.array([p_sigma, p_mu, x_I1, x_I0])
     
+    p, err = esf_fit(data_avg)
     
     #if 100*p[0]/err[0] > 15:
     #    print('Warning! Fractional error in esf blur parameter exceeds 15%! This will affect the resolution value!')
@@ -410,16 +411,18 @@ def calculate_mtf(data, pixel_size, disp=0, med_filt=False, fit_to_fourier=False
 
     mtfeq = interp1d(fftpack.fftshift(f), mtf_gauss, fill_value="extrapolate") #create an equation of mtf from gaussian fit by interpolating
     
-    noise = np.zeros(data.shape)
-    noise2 = np.zeros(data.shape)
-    noise_ft = np.zeros(data.shape)
-    noise_ft2 = np.zeros(data.shape)
+    #noise = np.zeros(data.shape)
+    #noise2 = np.zeros(data.shape)
+    #noise_ft = np.zeros(data.shape)
+    #noise_ft2 = np.zeros(data.shape)
     
-    for i in range(data.shape[0]):
-        noise[i,:] = (data[i,:] -data_avg)
-    for i in range(data.shape[0]):
-        noise_ft[i,:] = np.sqrt(np.abs(fftpack.fftshift(fftpack.fft(fftpack.ifftshift(noise[i,:]))))**2)
+    #for i in range(data.shape[0]):
+    #    noise[i,:] = (data[i,:] -data_avg)
+    #for i in range(data.shape[0]):
+    #    noise_ft[i,:] = np.sqrt(np.abs(fftpack.fftshift(fftpack.fft(fftpack.ifftshift(noise[i,:]))))**2)
     
+ 
+
     #for i in range(data.shape[1]):
         #noise2[:,i] = (data[:,i] -np.mean(data, axis=0))
     #for i in range(data.shape[1]):
@@ -428,20 +431,29 @@ def calculate_mtf(data, pixel_size, disp=0, med_filt=False, fit_to_fourier=False
     
     
     
-    nps = (1/(noise_ft.shape[0]-1))*np.sum(noise_ft,axis=0)/np.sqrt(data[:,int(p[1]+0.5):].shape[1]) #np.sqrt(data[:,int(p[1]+0.5):].shape[1])
+    #nps = (1/(noise_ft.shape[0]-1))*np.sum(noise_ft,axis=0)/np.sqrt(data[:,int(p[1]+0.5):].shape[1]) #np.sqrt(data[:,int(p[1]+0.5):].shape[1])
         
-    fnoise = 2*fftpack.fftfreq(nps.shape[0], d=1)
+    #fnoise = 2*fftpack.fftfreq(nps.shape[0], d=1)
     
     #noise = (np.sqrt(data.shape[0]))*(data_avg - esf_theoretical)
-            
-    const = np.mean(nps)
     
-    noiseq = interp1d(fftpack.fftshift(fnoise), const*np.ones(fnoise.shape), fill_value="extrapolate")
+    xc = int(p[1]+0.5)
+    #xc = xc + 10
+    
+    fnoise, PSD = signal.periodogram(data[:,xc:], 1, scaling='density')
+    
+    fnoise = 2*fnoise
+    
+    nps = np.sqrt(np.mean(PSD/2, axis=0))
+
+    const = np.mean(nps[1:])
+    
+    noiseq = interp1d((fnoise), const*np.ones(fnoise.shape), fill_value="extrapolate")
     #npsinterp = interp1d(fftpack.fftshift(fnoise), nps, fill_value = "extrapolate")
 
     #noisestd = np.std(npsinterp(fnoise)[int(np.where(fftpack.fftshift(f) == 0)[0]):])
     #print(noisestd)
-    noisestd = np.std(nps)
+    noisestd = np.std(nps[1:])
 
     
    #fnoise_new = 2*fftpack.fftfreq(10*np.shape(noise[0:])[0], d=1)
@@ -453,6 +465,11 @@ def calculate_mtf(data, pixel_size, disp=0, med_filt=False, fit_to_fourier=False
     f_cutoff_gauss = np.abs(fftpack.fftshift(f_new)[x2_ind]) #get frequency value corresponding to array value - this is cut off freq; resolution point
     spectral_cut_off = 100*const/mtf_gauss[np.where(fftpack.fftshift(f)==0)][0] #compute percantge of average NPS 
     
+    if f_cutoff_gauss == 1.0:
+        x2 = np.isclose(noiseq(f_new), fftpack.fftshift(mtfeq(f_new)), atol=5e-5*ibar).astype(int) #find intersection point between MTF and NPS in y dir
+        x2_ind = np.argmax(x2) #get array value of intersection point (x dir)
+        f_cutoff_gauss = np.abs(fftpack.fftshift(f_new)[x2_ind])
+    
     ferr = np.sqrt( ((noisestd**2) *(pfit[0]**2)) / (2*const**2 * np.log(pfit[1]/const)) + (2*perr[0]**2 * np.log(pfit[1]/const)) + ((perr[1]**2 * pfit[0]**2)/(2*pfit[1]**2 * np.log(pfit[1]/const))) )
     #print(const)
     #add plot
@@ -460,8 +477,8 @@ def calculate_mtf(data, pixel_size, disp=0, med_filt=False, fit_to_fourier=False
 
         plt.plot(fftpack.fftshift(f), mtf_data, label = 'data')
         plt.plot(fftpack.fftshift(f), mtf_gauss, label = 'gaussian')
-        plt.plot(fftpack.fftshift(fnoise), nps, 'r')
-        plt.plot(const*np.ones(fnoise.shape), 'r--', label = 'spectral cut-off $={0:.1f} \%$'.format(spectral_cut_off))
+        plt.plot((fnoise), nps, 'r')
+        plt.plot(const*np.ones(fnoise.shape), 'r--', label = '$\sqrt{\dfrac{NSD}{2}}$' + '$={0:.1f} \%$'.format(spectral_cut_off))
         plt.xlim(0,1)
         plt.xlabel('Normalised frequency')
         plt.ylabel('MTF')
@@ -507,7 +524,7 @@ def calc_res_dc(data_cube, roi1=np.index_exp[:,:], roi0=np.index_exp[:,:], sigma
                 #p = np.array([p[0], p[1], x_I1, x_I0])
                 
                 if ((red_chi<=red_chi_tr) and (errs[0]/pars[0] < sigma_err_tr)): #if errs[0]/pars[0] < sigma_err_tr: #0.23 for high int data sets
-                    real_space[i] = calculate_esf(ROI, simplified=True,pixel_size=1, disp = 0) 
+                    real_space[i] = calculate_esf(ROI, simplified=False,pixel_size=1, disp = 0) 
                     fourier_space[i] = calculate_mtf(ROI, 1, disp=0, med_filt=med_filt,
                                                      fit_to_fourier=fit_to_fourier,
                                                      noise_der=noise_der,
