@@ -15,7 +15,7 @@ import lmfit
 from skimage.segmentation import watershed
 from skimage.filters import sobel
 
-import tvregdiff
+#import tvregdiff
 
 
 np.random.seed(16)
@@ -262,7 +262,10 @@ def calculate_esf(data, pixel_size, disp=0, simplified=False):
     
     if simplified==False:
         p, err = esf_fit(data_avg)  #fit gaussian cdf to data
-        red_chi=np.nan
+        # red_chi=np.nan
+        ss_res = ((data - esf_p(np.arange(data_avg.size), *p))**2).sum()
+        ss_tot = ((data - data_avg)**2).sum()
+        r2 = 1 - ss_res/ss_tot
         #print(p[1]) #use this to print x value of 50% esf transition
         #print(np.sqrt(np.diag(err)))
     if simplified==True:
@@ -315,7 +318,7 @@ def calculate_esf(data, pixel_size, disp=0, simplified=False):
     
     #print(p[0], snr) #print curve fit values plus snr
     #print(p[1])
-    return p[0], snr, ibar, red_chi
+    return p[0], snr, ibar, r2
 
 
 
@@ -470,8 +473,8 @@ def calculate_mtf(data, pixel_size, disp=0, med_filt=False, fit_to_fourier=False
         x2_ind = np.argmax(x2) #get array value of intersection point (x dir)
         f_cutoff_gauss = np.abs(fftpack.fftshift(f_new)[x2_ind])
     
-    ferr = np.sqrt( ((noisestd**2) *(pfit[0]**2)) / (2*const**2 * np.log(pfit[1]/const)) + (2*perr[0]**2 * np.log(pfit[1]/const)) + ((perr[1]**2 * pfit[0]**2)/(2*pfit[1]**2 * np.log(pfit[1]/const))) )
-    #print(const)
+    ferr = np.sqrt( ((noisestd**2) *(pfit[0]**2)) / (2*noisestd**2 * np.log(pfit[1]/const)) + (2*perr[0]**2 * np.log(pfit[1]/const)) + ((perr[1]**2 * pfit[0]**2)/(2*pfit[1]**2 * np.log(pfit[1]/const))) )
+    #print("test")
     #add plot
     if disp != 0 :
 
